@@ -19,6 +19,12 @@ namespace SpeedArchive{
 		private readonly bool hasRegions;
 		private readonly bool hasPlatforms;
 
+		private static readonly List<string> restrictedColumnNames = new List<string>{
+			"Platform", "Region", "Player 1", "Player 2", "Player 3", "Player 4", "Level",
+			"Real Time", "Real Time without Loads", "In-Game Time", "Date", "Video", "Splits",
+			"Description", "Status", "Examiner", "Rejection Reason", "ID"
+		};
+
 		public TableGenerator(Category category, RunsClient client){
 			categoryName = category.Name;
 			isLevel = (category.Type == CategoryType.PerLevel);
@@ -26,7 +32,7 @@ namespace SpeedArchive{
 			variables = new List<string>();
 			variableIDs = new List<string>();
 			foreach(Variable v in category.Variables){
-				if(v.Name == "Platform" || v.Name == "Region" || variables.Contains(v.Name)){
+				if(restrictedColumnNames.Contains(v.Name) || variables.Contains(v.Name)){
 					variables.Add(v.Name + " (" + v.ID + ")"); //Prevents a column name conflict
 				}else{
 					variables.Add(v.Name);
