@@ -37,6 +37,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Cache.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="SheetWriter.cs" />
     <Compile Include="TableGenerator.cs">

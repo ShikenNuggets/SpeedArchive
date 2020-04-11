@@ -9,7 +9,10 @@ using NanoXLSX;
 namespace SpeedArchive{
 	class SheetWriter{
 		public static void Write(string dir, List<TableGenerator> tables){
-			if(tables == null || tables.Count <= 0){
+			var invalids = System.IO.Path.GetInvalidPathChars();
+			dir = string.Join("_", dir.Split(invalids, StringSplitOptions.RemoveEmptyEntries)).TrimEnd('.');
+
+			if (tables == null || tables.Count <= 0){
 				return;
 			}
 

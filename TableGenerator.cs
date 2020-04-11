@@ -10,8 +10,7 @@ namespace SpeedArchive{
 	class TableGenerator : DataTable{
 		public string categoryName;
 		private readonly bool isLevel;
-		private readonly List<string> variables;
-		private readonly List<string> variableIDs;
+		private readonly List<VariableInfo> variables;
 		private readonly int playerCount;
 		private readonly bool realTime;
 		private readonly bool igt;
@@ -22,23 +21,16 @@ namespace SpeedArchive{
 		private static readonly List<string> restrictedColumnNames = new List<string>{
 			"Platform", "Region", "Player 1", "Player 2", "Player 3", "Player 4", "Level",
 			"Real Time", "Real Time without Loads", "In-Game Time", "Date", "Video", "Splits",
-			"Description", "Status", "Examiner", "Rejection Reason", "ID"
+			"Description", "Status", "Rejection Reason", "ID"
 		};
 
 		public TableGenerator(Category category, RunsClient client){
 			categoryName = category.Name;
 			isLevel = (category.Type == CategoryType.PerLevel);
 
-			variables = new List<string>();
-			variableIDs = new List<string>();
+			variables = new List<VariableInfo>(category.Variables.Count);
 			foreach(Variable v in category.Variables){
-				if(restrictedColumnNames.Contains(v.Name) || variables.Contains(v.Name)){
-					variables.Add(v.Name + " (" + v.ID + ")"); //Prevents a column name conflict
-				}else{
-					variables.Add(v.Name);
-				}
-
-				variableIDs.Add(v.ID);
+				variables.Add(Cache.variables[v.ID]);
 			}
 
 			playerCount = category.Players.Value;
@@ -52,7 +44,7 @@ namespace SpeedArchive{
 
 			SetColumns();
 
-			var runs = client.GetRuns(gameId: category.GameID, categoryId: category.ID, elementsPerPage: 200, embeds: new RunEmbeds(embedLevel: true, embedPlayers: true, embedRegion: true, embedPlatform: true), orderBy: RunsOrdering.DateSubmitted);
+			var runs = client.GetRuns(gameId: category.GameID, categoryId: category.ID, elementsPerPage: 200, embeds: new RunEmbeds(embedPlayers: true), orderBy: RunsOrdering.DateSubmitted);
 			foreach(Run r in runs){
 				AddRun(r);
 			}
@@ -63,8 +55,12 @@ namespace SpeedArchive{
 				Columns.Add("Level");
 			}
 
-			foreach(string v in variables){
-				Columns.Add(v);
+			foreach(VariableInfo v in variables){
+				if(restrictedColumnNames.Contains(v.name) || v.HasDuplicateNames(variables)){
+					Columns.Add(v.name + " (" + v.id + ")");
+				}else{
+					Columns.Add(v.name);
+				}
 			}
 
 			for(int i = 0; i < playerCount; i++){
@@ -97,30 +93,27 @@ namespace SpeedArchive{
 			Columns.Add("Description");
 			
 			Columns.Add("Status");
-			Columns.Add("Examiner");
 			Columns.Add("Rejection Reason");
 			Columns.Add("ID");
 		}
 
 		private void AddRun(Run run){
 			//System.Threading.Thread.Sleep(10);
-			List<string> runData = new List<string>();
+			List<string> runData = new List<string>(13 + variables.Count + playerCount);
 
 			if(isLevel){
-				runData.Add(run.Level.Name);
+				runData.Add(Cache.levels[run.LevelID]);
 			}
 
-			foreach(string vid in variableIDs){
-				bool hasValue = false;
-				foreach (VariableValue vv in run.VariableValues){
-					if(vid == vv.VariableID){
-						runData.Add(vv.Value);
-						hasValue = true;
-						break;
-					}
-				}
+			List<string> runVariables = new List<string>();
+			foreach(VariableValue vv in run.VariableValues){
+				runVariables.Add(vv.ID);
+			}
 
-				if(!hasValue){
+			foreach(VariableInfo v in variables){
+				if(runVariables.Contains(v.id)){
+					runData.Add(v.name);
+				}else{
 					runData.Add("");
 				}
 			}
@@ -158,18 +151,26 @@ namespace SpeedArchive{
 			}
 
 			if(hasRegions){
-				if(run.Region != null){
-					runData.Add(run.Region.Name);
+				if(run.System.RegionID != null && !Cache.regions.ContainsKey(run.System.RegionID)){
+					Console.WriteLine("Fatal error! Region cached incorrectly!");
+				}
+
+				if(run.System.RegionID != null){
+					runData.Add(Cache.regions[run.System.RegionID]);
 				}else{
 					runData.Add("");
 				}
 			}
 
 			if(hasPlatforms){
-				if(run.Platform != null && run.System.IsEmulated){
-					runData.Add(run.Platform.Name + " [EMU]");
-				}else if(run.Platform != null && run.System.IsEmulated == false){
-					runData.Add(run.Platform.Name);
+				if(run.System.PlatformID != null && !Cache.platforms.ContainsKey(run.System.PlatformID)){
+					Console.WriteLine("Fatal error! Platform cached incorrectly!");
+				}
+
+				if(run.System.PlatformID != null && run.System.IsEmulated){
+					runData.Add(Cache.platforms[run.System.PlatformID] + " [EMU]");
+				}else if(run.System.PlatformID != null && run.System.IsEmulated == false){
+					runData.Add(Cache.platforms[run.System.PlatformID]);
 				}else{
 					runData.Add("");
 				}
@@ -200,19 +201,6 @@ namespace SpeedArchive{
 			}
 
 			runData.Add(run.Status.Type.ToString());
-			
-			if(run.Status.Type != RunStatusType.New && run.Status.ExaminerUserID != null){
-				try{
-					string test = run.Status.Examiner.Name;
-					runData.Add(run.Status.Examiner.Name);
-				}catch(APIException){
-					runData.Add("");
-				}catch(ArgumentNullException){
-					runData.Add("");
-				}
-			}else{
-				runData.Add("");
-			}
 
 			if(run.Status.Type == RunStatusType.Rejected && run.Status.Reason != null){
 				runData.Add(run.Status.Reason);

@@ -20,33 +20,37 @@ namespace SpeedArchive{
 			srcClient = new SpeedrunComClient();
 			string input = "";
 
-			while(true){
-#if (!DEBUG)
+			while (true){
+				#if (!DEBUG)
 				try{
-#endif
-					Console.WriteLine("Speedrun Archive Tool 0.1");
-					Console.WriteLine("Enter [1] to backup a specific game");
-					Console.WriteLine("Enter [2] to update backups");
-					Console.WriteLine("Enter [3] to backup ALL games");
-					Console.WriteLine("Enter [4] to check last backup for a specific game");
+				#endif
+					Console.WriteLine("Speedrun Archive Tool 0.2");
+					Console.WriteLine("Enter [1] to backup a game");
+					Console.WriteLine("Enter [2] to update my backups");
+					Console.WriteLine("Enter [3] to check last backup for a specific game");
+					#if (DEBUG)
+					Console.WriteLine("Enter [4] to backup ALL games");
 					Console.WriteLine("Enter [5] to invalidate all backups");
+					#endif
 					input = Console.ReadLine();
 					switch(input){
 						case "1":
 							GameHandler();
 							break;
 						case "2":
-							UpdateAllBackups();
+							UpdateBackups();
 							break;
 						case "3":
-							BackupAllGames();
+							GameHandler(check: true);
 							break;
+						#if (DEBUG)
 						case "4":
-							GameHandler(true);
+							BackupAllGames();
 							break;
 						case "5":
 							InvalidateAllBackups();
 							break;
+						#endif
 						default:
 							Console.WriteLine("Invalid input!");
 							break;
@@ -100,12 +104,36 @@ namespace SpeedArchive{
 		private static void BackupGame(string id){
 			List<TableGenerator> tables = new List<TableGenerator>();
 
-			Game game = srcClient.Games.GetGame(id, new GameEmbeds(true, true, false, true, true, true));
+			Game game = srcClient.Games.GetGame(id, new GameEmbeds(embedLevels: true, embedCategories: true, embedPlatforms: true, embedRegions: true, embedVariables: true));
+
+			//Cache platforms
+			foreach(string pID in game.PlatformIDs){
+				if(!Cache.platforms.ContainsKey(pID)){
+					Cache.CachePlatforms(game.Platforms);
+					break;
+				}
+			}
+
+			//Cache regions
+			foreach(string rID in game.RegionIDs){
+				if(!Cache.regions.ContainsKey(rID)){
+					Cache.CacheRegions(game.Regions);
+				}
+			}
+
+			//Cache variables
+			Cache.CacheVariables(game.Variables);
+
+			//Cache levels
+			Cache.CacheLevels(game.Levels);
+
+			//Run all categories
 			foreach(Category c in game.Categories){
 				Console.WriteLine("Grabbing [" + c.Name + "] runs...");
 				tables.Add(new TableGenerator(c, srcClient.Runs));
 			}
 
+			//Backup file
 			string fileName = "Backups/" + game.Abbreviation + " (" + game.ID + ")/";
 			Console.WriteLine("Writing to " + fileName + " ...");
 			SheetWriter.Write(fileName, tables);
@@ -114,11 +142,15 @@ namespace SpeedArchive{
 				gameBackups[id] = DateTime.Now;
 			}else{
 				gameBackups.Add(id, DateTime.Now);
-				SaveBackupsToFile();
 			}
 
+			SaveBackupsToFile();
 			backedUpThiSession.Add(id);
 			Console.WriteLine("Finished backup of " + game.Name);
+
+			//Clear per-game cached data
+			Cache.variables.Clear();
+			Cache.levels.Clear();
 		}
 
 		private static void BackupAllGames(){
@@ -133,18 +165,28 @@ namespace SpeedArchive{
 
 				Console.WriteLine("Backing up " + g.Name + "...");
 
-				BackupGame(g.ID);
+				while(true){
+					try{
+						System.Threading.Thread.Sleep(4000);
+						BackupGame(g.ID);
+						break;
+					}catch(APIException){
+						Console.WriteLine("An error has occurred, restarting proces...");
+						System.Threading.Thread.Sleep(60000);
+					}
+				}
+
 				gamesBackedUp++;
 				Console.Clear();
 
 				Console.WriteLine(gamesBackedUp.ToString() + " games backed up");
 			}
 
-			UpdateAllBackups();
+			UpdateBackups();
 		}
 
-		private static void UpdateAllBackups(){
-			var orderedPairs = gameBackups.OrderBy(pair => pair.Value); 
+		private static void UpdateBackups(){
+			var orderedPairs = gameBackups.OrderBy(pair => pair.Value);
 			foreach(var op in orderedPairs){
 				if(backedUpThiSession.Contains(op.Key)){
 					continue;
@@ -156,7 +198,11 @@ namespace SpeedArchive{
 
 		private static void CheckLastBackup(string id){
 			if(!gameBackups.ContainsKey(id)){
-				Console.WriteLine("This game has never been backed up!");
+				Console.WriteLine("This game has never been backed up! Would you like to back it up now? [Y/N]");
+				string input = Console.ReadLine();
+				if(input == "Y" || input == "y"){
+					BackupGame(id);
+				}
 			}else{
 				Console.WriteLine("This game was last backed up on " + gameBackups[id].ToShortDateString());
 			}
