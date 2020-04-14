@@ -105,14 +105,14 @@ namespace SpeedArchive{
 				runData.Add(Cache.levels[run.LevelID]);
 			}
 
-			List<string> runVariables = new List<string>();
+			Dictionary<string, string> runVariables = new Dictionary<string, string>();
 			foreach(VariableValue vv in run.VariableValues){
-				runVariables.Add(vv.ID);
+				runVariables.Add(vv.VariableID, vv.ID);
 			}
 
 			foreach(VariableInfo v in variables){
-				if(runVariables.Contains(v.id)){
-					runData.Add(v.name);
+				if(runVariables.ContainsKey(v.id)){
+					runData.Add(v.values[runVariables[v.id]]);
 				}else{
 					runData.Add("");
 				}
