@@ -55,14 +55,6 @@ namespace SpeedArchive{
 				Columns.Add("Level");
 			}
 
-			foreach(VariableInfo v in variables){
-				if(restrictedColumnNames.Contains(v.name) || v.HasDuplicateNames(variables)){
-					Columns.Add(v.name + " (" + v.id + ")");
-				}else{
-					Columns.Add(v.name);
-				}
-			}
-
 			for(int i = 0; i < playerCount; i++){
 				Columns.Add("Player " + (i + 1).ToString());
 			}
@@ -87,6 +79,14 @@ namespace SpeedArchive{
 				Columns.Add("Platform");
 			}
 
+			foreach(VariableInfo v in variables){
+				if(restrictedColumnNames.Contains(v.name) || v.HasDuplicateNames(variables)){
+					Columns.Add(v.name + " (" + v.id + ")");
+				}else{
+					Columns.Add(v.name);
+				}
+			}
+
 			Columns.Add("Date");
 			Columns.Add("Video");
 			Columns.Add("Splits");
@@ -108,14 +108,6 @@ namespace SpeedArchive{
 			Dictionary<string, string> runVariables = new Dictionary<string, string>();
 			foreach(VariableValue vv in run.VariableValues){
 				runVariables.Add(vv.VariableID, vv.ID);
-			}
-
-			foreach(VariableInfo v in variables){
-				if(runVariables.ContainsKey(v.id)){
-					runData.Add(v.values[runVariables[v.id]]);
-				}else{
-					runData.Add("");
-				}
 			}
 
 			for(int i = 0; i < playerCount; i++){
@@ -171,6 +163,14 @@ namespace SpeedArchive{
 					runData.Add(Cache.platforms[run.System.PlatformID] + " [EMU]");
 				}else if(run.System.PlatformID != null && run.System.IsEmulated == false){
 					runData.Add(Cache.platforms[run.System.PlatformID]);
+				}else{
+					runData.Add("");
+				}
+			}
+
+			foreach(VariableInfo v in variables){
+				if(runVariables.ContainsKey(v.id)){
+					runData.Add(v.values[runVariables[v.id]]);
 				}else{
 					runData.Add("");
 				}
