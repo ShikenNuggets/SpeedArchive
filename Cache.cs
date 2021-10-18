@@ -39,6 +39,11 @@ namespace SpeedArchive{
 		public static Dictionary<string, VariableInfo> variables = new Dictionary<string, VariableInfo>();
 		public static Dictionary<string, string> levels = new Dictionary<string, string>();
 
+		public static void ClearGameCache(){
+			variables.Clear();
+			platforms.Clear();
+		}
+
 		public static void CachePlatform(Platform p){
 			if(!platforms.ContainsKey(p.ID)){
 				platforms.Add(p.ID, p.Name);

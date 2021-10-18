@@ -17,6 +17,7 @@ namespace SpeedArchive{
 		private readonly bool loadRemoved;
 		private readonly bool hasRegions;
 		private readonly bool hasPlatforms;
+		private bool hasRuns = false;
 
 		private static readonly List<string> restrictedColumnNames = new List<string>{
 			"Platform", "Region", "Player 1", "Player 2", "Player 3", "Player 4", "Level",
@@ -46,6 +47,7 @@ namespace SpeedArchive{
 
 			var runs = client.GetRuns(gameId: category.GameID, categoryId: category.ID, elementsPerPage: 200, embeds: new RunEmbeds(embedPlayers: true), orderBy: RunsOrdering.DateSubmitted);
 			foreach(Run r in runs){
+				hasRuns = true;
 				AddRun(r);
 			}
 		}
@@ -98,7 +100,6 @@ namespace SpeedArchive{
 		}
 
 		private void AddRun(Run run){
-			//System.Threading.Thread.Sleep(10);
 			List<string> runData = new List<string>(13 + variables.Count + playerCount);
 
 			if(isLevel){
@@ -144,7 +145,7 @@ namespace SpeedArchive{
 
 			if(hasRegions){
 				if(run.System.RegionID != null && !Cache.regions.ContainsKey(run.System.RegionID)){
-					Console.WriteLine("Fatal error! Region cached incorrectly!");
+					Cache.CacheRegion(run.Region);
 				}
 
 				if(run.System.RegionID != null){
@@ -156,7 +157,7 @@ namespace SpeedArchive{
 
 			if(hasPlatforms){
 				if(run.System.PlatformID != null && !Cache.platforms.ContainsKey(run.System.PlatformID)){
-					Console.WriteLine("Fatal error! Platform cached incorrectly!");
+					Cache.CachePlatform(run.Platform);
 				}
 
 				if(run.System.PlatformID != null && run.System.IsEmulated){
@@ -211,6 +212,10 @@ namespace SpeedArchive{
 			runData.Add(run.ID);
 
 			Rows.Add(runData.ToArray());
+		}
+
+		public static bool HasNoRuns(TableGenerator tg){
+			return !tg.hasRuns;
 		}
 	}
 }

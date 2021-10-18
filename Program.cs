@@ -10,6 +10,9 @@ using Styles;
 
 namespace SpeedArchive{
 	class Program{
+		private const int rateLimitTime = 4 * 1000;
+		private const int cooldownTime = 60 * 1000;
+
 		private static SpeedrunComClient srcClient;
 		private static Dictionary<string, DateTime> gameBackups = new Dictionary<string, DateTime>();
 		private static readonly string backupsFile = "Backups/Backups.json";
@@ -28,10 +31,7 @@ namespace SpeedArchive{
 					Console.WriteLine("Enter [1] to backup a game");
 					Console.WriteLine("Enter [2] to update my backups");
 					Console.WriteLine("Enter [3] to check last backup for a specific game");
-					#if (DEBUG)
-					Console.WriteLine("Enter [4] to backup ALL games");
-					Console.WriteLine("Enter [5] to invalidate all backups");
-					#endif
+					Console.WriteLine("Enter [4] to invalidate all backups");
 					input = Console.ReadLine();
 					switch(input){
 						case "1":
@@ -43,14 +43,9 @@ namespace SpeedArchive{
 						case "3":
 							GameHandler(check: true);
 							break;
-						#if (DEBUG)
 						case "4":
-							BackupAllGames();
-							break;
-						case "5":
 							InvalidateAllBackups();
 							break;
-						#endif
 						default:
 							Console.WriteLine("Invalid input!");
 							break;
@@ -101,10 +96,19 @@ namespace SpeedArchive{
 			}
 		}
 
-		private static void BackupGame(string id){
+		private static void BackupGame(string id, bool verboseLogs = true){
 			List<TableGenerator> tables = new List<TableGenerator>();
 
-			Game game = srcClient.Games.GetGame(id, new GameEmbeds(embedLevels: true, embedCategories: true, embedPlatforms: true, embedRegions: true, embedVariables: true));
+			Game game = null;
+			try{
+				game = srcClient.Games.GetGame(id, new GameEmbeds(embedLevels: true, embedCategories: true, embedPlatforms: true, embedRegions: true, embedVariables: true));
+			}catch(Exception){
+			}
+
+			if(game == null){
+				Console.WriteLine("Could not find game [" + id + "]!");
+				return;
+			}
 
 			//Cache platforms
 			foreach(string pID in game.PlatformIDs){
@@ -129,13 +133,20 @@ namespace SpeedArchive{
 
 			//Run all categories
 			foreach(Category c in game.Categories){
-				Console.WriteLine("Grabbing [" + c.Name + "] runs...");
+				if(verboseLogs){ Console.WriteLine("Grabbing [" + c.Name + "] runs..."); }
 				tables.Add(new TableGenerator(c, srcClient.Runs));
+			}
+
+			tables.RemoveAll(TableGenerator.HasNoRuns);
+			if(tables.Count == 0){
+				backedUpThiSession.Add(id);
+				Cache.ClearGameCache();
+				return;
 			}
 
 			//Backup file
 			string fileName = "Backups/" + game.Abbreviation + " (" + game.ID + ")/";
-			Console.WriteLine("Writing to " + fileName + " ...");
+			if(verboseLogs){ Console.WriteLine("Writing to " + fileName + " ..."); }
 			SheetWriter.Write(fileName, tables);
 
 			if(gameBackups.ContainsKey(id)){
@@ -149,37 +160,47 @@ namespace SpeedArchive{
 			Console.WriteLine("Finished backup of " + game.Name);
 
 			//Clear per-game cached data
-			Cache.variables.Clear();
-			Cache.levels.Clear();
+			Cache.ClearGameCache();
 		}
 
 		private static void BackupAllGames(){
 			int gamesBackedUp = 0;
 
 			var games = srcClient.Games.GetGameHeaders(orderBy: GamesOrdering.CreationDate);
-			foreach(var g in games){
-				if(gameBackups.ContainsKey(g.ID)){
-					//We've already backed up this game. Skip!
-					continue;
-				}
 
-				Console.WriteLine("Backing up " + g.Name + "...");
+			while(true){
+				try{
+					foreach(var g in games){
+						if(gameBackups.ContainsKey(g.ID)){
+							//We've already backed up this game. Skip!
+							continue;
+						}
 
-				while(true){
-					try{
-						System.Threading.Thread.Sleep(4000);
-						BackupGame(g.ID);
-						break;
-					}catch(APIException){
-						Console.WriteLine("An error has occurred, restarting proces...");
-						System.Threading.Thread.Sleep(60000);
+						Console.WriteLine("Backing up " + g.Name + "...");
+
+						while(true){
+							try{
+								System.Threading.Thread.Sleep(rateLimitTime);
+								BackupGame(g.ID);
+								break;
+							}catch(Exception e){
+								Console.WriteLine("Exception: " + e.Message);
+								Console.WriteLine("An error has occurred, restarting process...");
+								System.Threading.Thread.Sleep(60000);
+							}
+						}
+
+						gamesBackedUp++;
+						Console.Clear();
+
+						Console.WriteLine(gamesBackedUp.ToString() + " games backed up");
 					}
+					break;
+				}catch(Exception e){
+					Console.WriteLine("Exception: " + e.Message);
+					Console.WriteLine("An error has occurred, restarting process...");
+					System.Threading.Thread.Sleep(cooldownTime);
 				}
-
-				gamesBackedUp++;
-				Console.Clear();
-
-				Console.WriteLine(gamesBackedUp.ToString() + " games backed up");
 			}
 
 			UpdateBackups();
@@ -192,7 +213,16 @@ namespace SpeedArchive{
 					continue;
 				}
 
-				BackupGame(op.Key);
+				while(true){
+					try{
+						BackupGame(op.Key, false);
+						System.Threading.Thread.Sleep(rateLimitTime);
+						break;
+					}catch(Exception){
+						Console.WriteLine("An error has occurred, restarting process...");
+						System.Threading.Thread.Sleep(cooldownTime);
+					}
+				}
 			}
 		}
 
@@ -238,6 +268,58 @@ namespace SpeedArchive{
 				gameBackups.Clear();
 				SaveBackupsToFile();
 			}
+		}
+
+		private static void BackupByNewestRuns(){
+			var runs = srcClient.Runs.GetRuns(elementsPerPage: 200, orderBy: RunsOrdering.DateSubmittedDescending);
+			foreach(Run r in runs){
+				if(r != null && r.GameID != null && !backedUpThiSession.Contains(r.GameID)){
+					while(true){
+						try{
+							if(!IsRunNew(r)){
+								break; //Ignore runs we already have backups for
+							}
+
+							System.Threading.Thread.Sleep(1000);
+							if(r.DateSubmitted.HasValue){
+								Console.WriteLine("Backing up runs from " + r.DateSubmitted.Value.ToString());
+							}
+							BackupGame(r.GameID, false);
+							break;
+						}catch{
+							Console.WriteLine("An error has occurred, restarting process...");
+							System.Threading.Thread.Sleep(60000);
+						}
+					}
+				}
+			}
+		}
+
+		private static bool IsRunNew(Run run){
+			if(run == null){
+				return false;
+			}
+
+			DateTime? dateToUse = null;
+			string gameID = run.GameID;
+
+			if(run.DateSubmitted.HasValue){
+				dateToUse = run.DateSubmitted.Value;
+			}else if(run.Status != null && run.Status.VerifyDate.HasValue){
+				dateToUse = run.Status.VerifyDate.Value;
+			}else if(run.Date.HasValue){
+				dateToUse = run.Date.Value;
+			}
+
+			if(dateToUse.HasValue && gameID != null){
+				if(!gameBackups.ContainsKey(gameID)){
+					return true;
+				}
+
+				return gameBackups[gameID].CompareTo(dateToUse.Value) <= 0;
+			}
+
+			return false;
 		}
 	}
 }
