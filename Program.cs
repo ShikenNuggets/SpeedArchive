@@ -29,21 +29,25 @@ namespace SpeedArchive{
 				#endif
 					Console.WriteLine("Speedrun Archive Tool 0.2");
 					Console.WriteLine("Enter [1] to backup a game");
-					Console.WriteLine("Enter [2] to update my backups");
-					Console.WriteLine("Enter [3] to check last backup for a specific game");
-					Console.WriteLine("Enter [4] to invalidate all backups");
+					Console.WriteLine("Enter [2] to backup all games that you run");
+					Console.WriteLine("Enter [3] to update my backups");
+					Console.WriteLine("Enter [4] to check last backup for a specific game");
+					Console.WriteLine("Enter [5] to invalidate all backups");
 					input = Console.ReadLine();
 					switch(input){
 						case "1":
 							GameHandler();
 							break;
 						case "2":
-							UpdateBackups();
+							UserHandler();
 							break;
 						case "3":
-							GameHandler(check: true);
+							UpdateBackups();
 							break;
 						case "4":
+							GameHandler(check: true);
+							break;
+						case "5":
 							InvalidateAllBackups();
 							break;
 						default:
@@ -93,6 +97,44 @@ namespace SpeedArchive{
 				CheckLastBackup(game.ID);
 			}else{
 				BackupGame(game.ID);
+			}
+		}
+
+		private static void UserHandler(){
+			Console.WriteLine("Enter your username or ID:");
+
+			string input = Console.ReadLine();
+			User user = null;
+			var userList = srcClient.Users.GetUsers(input, elementsPerPage: 200);
+			foreach(User u in userList){
+				if(u != null && u.Name != null && u.Name.Equals(input)){
+					user = u; //Exact match
+				}
+			}
+
+			if(user == null && userList.Count() > 0){
+				user = userList.First();
+			}
+
+			if(user == null){
+				try{
+					user = srcClient.Users.GetUser(input);
+				}catch(APIException){}
+			}
+
+			if(user == null){
+				Console.WriteLine("Couldn't find a game with that name/url/ID!");
+				return;
+			}
+
+			HashSet<string> gameIDs = new HashSet<string>();
+			foreach(Run r in user.Runs){
+				gameIDs.Add(r.GameID);
+			}
+
+			foreach(string s in gameIDs){
+				System.Threading.Thread.Sleep(rateLimitTime);
+				BackupGame(s, false);
 			}
 		}
 
